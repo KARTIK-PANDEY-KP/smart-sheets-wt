@@ -18,6 +18,10 @@ app = FastAPI()
 
 # Initialize OpenAI client
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Initialize Perplexity client (OpenAI-compatible endpoint)
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
+PERPLEXITY_API_BASE = os.getenv("PERPLEXITY_API_BASE", "https://api.perplexity.ai")
+perplexity_client = AsyncOpenAI(api_key=PERPLEXITY_API_KEY, base_url=PERPLEXITY_API_BASE)
 
 # Enable CORS
 app.add_middleware(
@@ -40,15 +44,40 @@ class ChatRequest(BaseModel):
     chat_id: Optional[str] = None
     searchTypes: List[str] = []
 
-async def process_search(search_type: str, query: str, db: Session, chat_id: str) -> str:
+async def web_search_tool(query: str, streaming: bool = False):
+    system_prompt = "You are a helpful research assistant. Cite sources using [number](url) markdown."
+    user_prompt = f"Search: {query}\nReturn relevant links and a summary."
+    resp = await perplexity_client.chat.completions.create(
+        model="sonar-reasoning-pro",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        stream=streaming,
+        max_tokens=1024,
+    )
+    return resp
+
+async def process_search(search_type: str, query: str, db: Session, chat_id: str, stream_tool=None) -> str:
     """Process a search request and return results."""
-    # This is a placeholder - in a real app, you would implement actual search logic
-    await asyncio.sleep(1)  # Simulate search delay
-    
     if search_type == "web_search":
-        return "Found relevant web results for: " + query
+        # Stream Perplexity result as tool messages
+        result_chunks = []
+        stream = await web_search_tool(query, streaming=False)
+        async for chunk in stream:
+            content = chunk.choices[0].delta.content if chunk.choices[0].delta.content else ""
+            if content:
+                result_chunks.append(content)
+                if stream_tool:
+                    await stream_tool(content)
+        return "".join(result_chunks)
     elif search_type == "interview_search":
-        return "Found relevant interview information for: " + query
+        await asyncio.sleep(1)
+        result = "Found relevant interview information for: " + query
+        if stream_tool:
+            await stream_tool(result)
+        return result
+    await asyncio.sleep(1)
     return "No results found"
 
 async def generate_chat_response(messages: List[Message], db: Session, chat_id: Optional[str] = None, search_types: List[str] = []):
@@ -92,18 +121,31 @@ async def generate_chat_response(messages: List[Message], db: Session, chat_id: 
             "content": search_type.replace("_", " ").title()
         }
         
-        # Process search
-        result = await process_search(search_type, messages[-1].content, db, chat_id)
-        search_results.append(result)
+        # Stream tool output
+        if search_type == "web_search":
+            result = ""
+            stream = await web_search_tool(messages[-1].content, streaming=True)
+            async for chunk in stream:
+                content = chunk.choices[0].delta.content if chunk.choices[0].delta.content else ""
+                if content:
+                    result += content
+                    tool_message.content = result
+                    db.commit()
+                    yield {
+                        "type": "tool_delta",
+                        "content": content
+                    }
+            tool_result = result
+        else:
+            tool_result = await process_search(search_type, messages[-1].content, db, chat_id)
+            tool_message.content = tool_result
+            db.commit()
+            yield {
+                "type": "tool_delta",
+                "content": tool_result
+            }
         
-        tool_message.content = result
-        db.commit()
-        
-        yield {
-            "type": "tool_delta",
-            "content": result
-        }
-        
+        search_results.append(tool_result)
         yield {
             "type": "tool_finished",
             "toolName": search_type,
@@ -113,16 +155,40 @@ async def generate_chat_response(messages: List[Message], db: Session, chat_id: 
     # Get real response from OpenAI
     try:
         # Filter out tool messages and prepare messages for OpenAI
-        openai_messages = [
-            {"role": m.role, "content": m.content}
-            for m in messages
-            if m.role in ["user", "assistant"]  # Only include user and assistant messages
-        ]
+        openai_messages = []
+        
+        # Add a system message instructing the model to use search results
+        system_message = (
+            "You are a helpful AI assistant with access to web search results. "
+            "If search results are provided, you MUST use them to provide the most accurate and up-to-date information. "
+            "When answering based on search results, cite sources using [number] notation. "
+            "If search results don't contain the answer, clearly state that and provide your best knowledge."
+        )
+        openai_messages.append({"role": "system", "content": system_message})
+        
+        # Add previous messages
+        for m in messages:
+            if m.role in ["user", "assistant"]:  # Only include user and assistant messages
+                openai_messages.append({"role": m.role, "content": m.content})
         
         # Add search results to the last user message if any searches were performed
         if search_results:
-            search_context = "\n\nSearch Results:\n" + "\n".join(search_results)
-            openai_messages[-1]["content"] += search_context
+            # Get the original user query
+            original_query = openai_messages[-1]["content"]
+            
+            # Format search results with clear structure and instructions
+            formatted_search_results = "\n\n### Web Search Results:\n"
+            for i, result in enumerate(search_results):
+                formatted_search_results += f"\n[{i+1}] {result}\n"
+            
+            formatted_search_results += "\n\n### Instructions:\n"
+            formatted_search_results += "Please answer the original question using these search results. "
+            formatted_search_results += "Cite sources using [number] notation."
+            
+            # Replace the last user message with a formatted version
+            openai_messages[-1]["content"] = (
+                f"Original question: {original_query}\n" + formatted_search_results
+            )
         
         stream = await client.chat.completions.create(
             model="gpt-4",

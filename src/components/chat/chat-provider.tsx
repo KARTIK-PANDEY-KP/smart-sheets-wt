@@ -71,9 +71,9 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "UPDATE_TOOL_MESSAGE":
       return {
         ...state,
-        messages: state.messages.map((msg, index) => 
+        messages: state.messages.map((msg, index) =>
           msg.role === "tool" && index === state.messages.findLastIndex(m => m.role === "tool")
-            ? { ...msg, content: action.content }
+            ? { ...msg, content: msg.content + action.content }
             : msg
         ),
       };
