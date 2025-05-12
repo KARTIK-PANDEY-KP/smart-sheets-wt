@@ -84,19 +84,36 @@ async def generate_chat_response(messages: List[Message], db: Session, chat_id: 
     """Get response from OpenAI API with tool events."""
     # Create or get chat
     if not chat_id:
+        # Create a new chat
         chat = Chat(
+            id=str(uuid.uuid4()),
             model="gpt-4",
-            chat_metadata=json.dumps({"temperature": 0.7})
+            chat_metadata=json.dumps({"temperature": 0.7}),
+            created_at=datetime.now()
         )
         db.add(chat)
-        db.flush()
+        db.commit()
         chat_id = chat.id
+    else:
+        # Get existing chat
+        chat = db.query(Chat).filter(Chat.id == chat_id).first()
+        if not chat:
+            # If chat not found, create new
+            chat = Chat(
+                id=chat_id,
+                model="gpt-4",
+                chat_metadata=json.dumps({"temperature": 0.7}),
+                created_at=datetime.now()
+            )
+            db.add(chat)
+            db.commit()
     
     # Store user message
     user_message = ChatMessage(
         chat_id=chat_id,
         role="user",
-        content=messages[-1].content
+        content=messages[-1].content,
+        ts=datetime.now()
     )
     db.add(user_message)
     db.commit()
@@ -110,7 +127,8 @@ async def generate_chat_response(messages: List[Message], db: Session, chat_id: 
             role="tool",
             content=search_type.replace("_", " ").title(),
             tool_name=search_type,
-            tool_args={"query": messages[-1].content}
+            tool_args=json.dumps({"query": messages[-1].content}),
+            ts=datetime.now()
         )
         db.add(tool_message)
         db.commit()
@@ -202,18 +220,47 @@ async def generate_chat_response(messages: List[Message], db: Session, chat_id: 
             stream=True
         )
         
+        # Create assistant message in database
         assistant_message = ChatMessage(
             chat_id=chat_id,
             role="assistant",
-            content=""
+            content="",
+            ts=datetime.now()
         )
         db.add(assistant_message)
+        db.commit()
         
+        # Stream assistant response
         async for chunk in stream:
             if chunk.choices[0].delta.content:
                 content = chunk.choices[0].delta.content
                 assistant_message.content += content
+                
+                # Update partial_json to track streaming progress
+                current_partial = assistant_message.partial_json or {}
+                if not isinstance(current_partial, dict):
+                    current_partial = {}
+                
+                # Store time-stamped chunks for potential replay/analysis
+                timestamp = datetime.now().isoformat()
+                if "chunks" not in current_partial:
+                    current_partial["chunks"] = []
+                
+                current_partial["chunks"].append({
+                    "content": content,
+                    "timestamp": timestamp
+                })
+                
+                # Store completion percentage estimate
+                if chunk.choices[0].finish_reason:
+                    current_partial["complete"] = True
+                else:
+                    current_partial["complete"] = False
+                
+                # Update the message
+                assistant_message.partial_json = current_partial
                 db.commit()
+                
                 yield {
                     "type": "delta",
                     "content": content
@@ -226,6 +273,15 @@ async def generate_chat_response(messages: List[Message], db: Session, chat_id: 
             "type": "delta",
             "content": "I apologize, but I encountered an error processing your request."
         }
+    
+    # Update chat title if it's empty
+    if not chat.title and len(messages) > 0:
+        # Use the first user message as the chat title (truncated)
+        first_user_message = next((m for m in messages if m.role == "user"), None)
+        if first_user_message:
+            title = first_user_message.content[:50]  # Truncate to 50 characters
+            chat.title = title
+            db.commit()
     
     yield {
         "type": "chat_message_complete",
@@ -255,7 +311,7 @@ def list_chats(db: Session = Depends(get_db)):
     return [
         {
             "id": chat.id,
-            "title": chat.title,
+            "title": chat.title or "",
             "created_at": chat.created_at,
             "model": chat.model,
             "metadata": chat.chat_metadata
@@ -272,6 +328,7 @@ def get_chat_messages(chat_id: str, db: Session = Depends(get_db)):
     
     return [
         {
+            "id": msg.id,
             "role": msg.role,
             "content": msg.content,
             "tool_name": msg.tool_name,
@@ -280,6 +337,16 @@ def get_chat_messages(chat_id: str, db: Session = Depends(get_db)):
         }
         for msg in messages
     ]
+
+@app.delete("/chats/{chat_id}")
+def delete_chat(chat_id: str, db: Session = Depends(get_db)):
+    """Delete a chat and all its messages."""
+    # Delete all messages first
+    db.query(ChatMessage).filter(ChatMessage.chat_id == chat_id).delete()
+    # Then delete the chat
+    db.query(Chat).filter(Chat.id == chat_id).delete()
+    db.commit()
+    return {"status": "success", "message": f"Chat {chat_id} deleted successfully"}
 
 if __name__ == "__main__":
     import uvicorn

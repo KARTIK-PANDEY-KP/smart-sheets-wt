@@ -45,11 +45,18 @@ chat-ui-extracted/
      - Message streaming
      - Tool usage tracking
      - Chat history persistence
+     - Partial response tracking for resumable streams
 
 3. **API Endpoints**
    - `POST /chat`: Create/continue a chat with streaming responses
    - `GET /chats`: List all chats
    - `GET /chats/{chat_id}/messages`: Get all messages for a specific chat
+   - `DELETE /chats/{chat_id}`: Delete a chat and all its messages
+
+4. **Enhanced Search Functionality**
+   - Web search integration with Perplexity API
+   - Proper citation handling with numeric references [1], [2], etc.
+   - Multi-search support with toggleable search types
 
 ### Frontend
 
@@ -70,6 +77,15 @@ chat-ui-extracted/
    - Tool usage visualization
    - Responsive design
    - Type-safe development with TypeScript
+   - Collapsible web search results
+   - Clickable citations for search result references
+
+4. **New UI Improvements**
+   - Fixed layout with sticky composer at bottom
+   - Scrollable chat area
+   - Toggleable search type buttons (web search, interview search)
+   - Collapsible tool results with preview/expand functionality
+   - Citation format with clickable numbered references [1], [2], etc.
 
 ## Database Schema
 
@@ -121,7 +137,7 @@ CREATE TABLE chat_messages (
 | `content`      | The actual message text or tool output.                                                      |
 | `tool_name`    | If the message is from a tool, records which tool was used.                                  |
 | `tool_args`    | Stores the arguments passed to the tool, for reproducibility and debugging.                  |
-| `partial_json` | Stores partial/streaming responses for real-time UIs.                                        |
+| `partial_json` | Stores partial/streaming responses for real-time UIs, including chunk-by-chunk content with timestamps for resumable streams and playback.|
 
 #### What does NOT belong in ChatMessages
 
@@ -197,7 +213,13 @@ pip install -r requirements.txt
 python -m app.db.init_db
 ```
 
-4. Start the server:
+4. Set environment variables for API keys:
+```bash
+export OPENAI_API_KEY="your-openai-api-key"
+export PERPLEXITY_API_KEY="your-perplexity-api-key"
+```
+
+5. Start the server:
 ```bash
 uvicorn main:app --reload
 ```
@@ -238,6 +260,23 @@ curl -X POST http://localhost:8000/chat \
   }'
 ```
 
+4. Create a new chat with web search:
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {"role": "user", "content": "What are the latest developments in AI?"}
+    ],
+    "searchTypes": ["web_search"]
+  }'
+```
+
+5. Delete a chat:
+```bash
+curl -X DELETE http://localhost:8000/chats/{chat_id}
+```
+
 ## Streaming Response Format
 
 The chat endpoint streams responses in the following format:
@@ -252,6 +291,17 @@ data: {"type": "delta", "content": "on "}
 data: {"type": "chat_message_complete", "content": ""}
 ```
 
+## Recent Updates
+
+### Day 2 Enhancements
+- 🚀 **Web Search Integration**: Added Perplexity API integration for real-time web search
+- 📝 **Citation System**: Implemented numbered citation system ([1], [2], etc.) with clickable links
+- 🔍 **Search Types**: Added toggleable search types (web search, interview search)
+- 📚 **Collapsible Results**: Implemented collapsible web search results with expandable preview
+- 📱 **Layout Improvements**: Fixed composer position and made chat area properly scrollable
+- 💾 **Database Enhancements**: Added proper handling of partial_json for streaming response tracking
+- 🧹 **Chat Management**: Added DELETE endpoint for cleaning up old chats
+
 ## Development Status
 
 - [x] Project Setup & Persistence
@@ -264,12 +314,21 @@ data: {"type": "chat_message_complete", "content": ""}
   - [x] Web search tool with Perplexity integration
   - [x] Interview search tool with Pinecone integration
   - [x] Frontend tool call visualization
-
+  
 - [ ] Polishing & Table-Side Integration
   - [ ] Chat Sheet implementation
   - [ ] Theming and styling
   - [ ] Persistence demo
   - [ ] Documentation updates
+  
+- [x] Polishing & Chat Interface Integration
+  - [x] Proper chat interface with message streaming
+  - [x] Citation format with clickable numeric references
+  - [x] Collapsible tool results with preview
+  - [x] Improved database handling with streaming chunks tracking
+  - [x] Layout fixes for better usability
+  - [x] Toggleable search types
+  - [x] Documentation updates
 
 ## Next Steps
 
