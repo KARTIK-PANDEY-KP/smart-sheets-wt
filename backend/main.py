@@ -10,13 +10,19 @@ from sqlalchemy.orm import Session
 from app.db.base import get_db
 from app.db.models import Chat, ChatMessage
 from datetime import datetime
+import openai
+from openai import AsyncOpenAI
+import os
 
 app = FastAPI()
+
+# Initialize OpenAI client
+client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Your frontend URL
+    allow_origins=["http://localhost:3001"],  # Your frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -32,9 +38,21 @@ class ChatRequest(BaseModel):
     messages: List[Message]
     model: str = "gpt-4"
     chat_id: Optional[str] = None
+    searchTypes: List[str] = []
 
-async def generate_chat_response(messages: List[Message], db: Session, chat_id: Optional[str] = None):
-    """Simulate streaming chat response with different event types."""
+async def process_search(search_type: str, query: str, db: Session, chat_id: str) -> str:
+    """Process a search request and return results."""
+    # This is a placeholder - in a real app, you would implement actual search logic
+    await asyncio.sleep(1)  # Simulate search delay
+    
+    if search_type == "web_search":
+        return "Found relevant web results for: " + query
+    elif search_type == "interview_search":
+        return "Found relevant interview information for: " + query
+    return "No results found"
+
+async def generate_chat_response(messages: List[Message], db: Session, chat_id: Optional[str] = None, search_types: List[str] = []):
+    """Get response from OpenAI API with tool events."""
     # Create or get chat
     if not chat_id:
         chat = Chat(
@@ -54,59 +72,88 @@ async def generate_chat_response(messages: List[Message], db: Session, chat_id: 
     db.add(user_message)
     db.commit()
 
-    # Simulate tool usage
-    tool_message = ChatMessage(
-        chat_id=chat_id,
-        role="tool",
-        content="Starting web search...",
-        tool_name="web_search",
-        tool_args={"query": messages[-1].content}
-    )
-    db.add(tool_message)
-    db.commit()
+    search_results = []
     
-    yield {
-        "type": "tool_started",
-        "content": "Starting web search..."
-    }
-    
-    await asyncio.sleep(1)  # Simulate tool processing
-    
-    tool_message.content = "Found relevant information..."
-    db.commit()
-    
-    yield {
-        "type": "tool_delta",
-        "content": "Found relevant information..."
-    }
-    
-    await asyncio.sleep(0.5)
-    
-    tool_message.content = "Web search completed."
-    db.commit()
-    
-    yield {
-        "type": "tool_finished",
-        "content": "Web search completed."
-    }
-    
-    # Simulate LLM response
-    response_text = "Based on the search results, I can help you with that. "
-    assistant_message = ChatMessage(
-        chat_id=chat_id,
-        role="assistant",
-        content=""
-    )
-    db.add(assistant_message)
-    
-    for word in response_text.split():
-        assistant_message.content += word + " "
+    # Process each search type if specified
+    for search_type in search_types:
+        tool_message = ChatMessage(
+            chat_id=chat_id,
+            role="tool",
+            content=search_type.replace("_", " ").title(),
+            tool_name=search_type,
+            tool_args={"query": messages[-1].content}
+        )
+        db.add(tool_message)
         db.commit()
+        
+        yield {
+            "type": "tool_started",
+            "toolName": search_type,
+            "content": search_type.replace("_", " ").title()
+        }
+        
+        # Process search
+        result = await process_search(search_type, messages[-1].content, db, chat_id)
+        search_results.append(result)
+        
+        tool_message.content = result
+        db.commit()
+        
+        yield {
+            "type": "tool_delta",
+            "content": result
+        }
+        
+        yield {
+            "type": "tool_finished",
+            "toolName": search_type,
+            "content": search_type.replace("_", " ").title()
+        }
+    
+    # Get real response from OpenAI
+    try:
+        # Filter out tool messages and prepare messages for OpenAI
+        openai_messages = [
+            {"role": m.role, "content": m.content}
+            for m in messages
+            if m.role in ["user", "assistant"]  # Only include user and assistant messages
+        ]
+        
+        # Add search results to the last user message if any searches were performed
+        if search_results:
+            search_context = "\n\nSearch Results:\n" + "\n".join(search_results)
+            openai_messages[-1]["content"] += search_context
+        
+        stream = await client.chat.completions.create(
+            model="gpt-4",
+            messages=openai_messages,
+            stream=True
+        )
+        
+        assistant_message = ChatMessage(
+            chat_id=chat_id,
+            role="assistant",
+            content=""
+        )
+        db.add(assistant_message)
+        
+        async for chunk in stream:
+            if chunk.choices[0].delta.content:
+                content = chunk.choices[0].delta.content
+                assistant_message.content += content
+                db.commit()
+                yield {
+                    "type": "delta",
+                    "content": content
+                }
+                await asyncio.sleep(0.01)  # Small delay to prevent overwhelming the frontend
+    
+    except Exception as e:
+        print(f"Error calling OpenAI API: {e}")
         yield {
             "type": "delta",
-            "content": word + " "
+            "content": "I apologize, but I encountered an error processing your request."
         }
-        await asyncio.sleep(0.1)  # Simulate token generation
     
     yield {
         "type": "chat_message_complete",
@@ -116,7 +163,7 @@ async def generate_chat_response(messages: List[Message], db: Session, chat_id: 
 @app.post("/chat")
 async def chat(request: ChatRequest, db: Session = Depends(get_db)):
     async def event_generator():
-        async for event in generate_chat_response(request.messages, db, request.chat_id):
+        async for event in generate_chat_response(request.messages, db, request.chat_id, request.searchTypes):
             yield f"data: {json.dumps(event)}\n\n"
     
     return StreamingResponse(
