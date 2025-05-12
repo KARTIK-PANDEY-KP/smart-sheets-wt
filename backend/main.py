@@ -161,9 +161,12 @@ async def generate_chat_response(messages: List[Message], db: Session, chat_id: 
         system_message = (
             "You are a helpful AI assistant with access to web search results. "
             "If search results are provided, you MUST use them to provide the most accurate and up-to-date information. "
-            "When citing sources, use proper Markdown links, like [text](URL). "
-            "If there are numbered citations in the search results like [1], [2], etc., maintain those exact references "
-            "and include the corresponding URLs in your response as clickable links. "
+            "For citations, use numbered references in square brackets like [1], [2], etc. "
+            "At the end of your message, include the corresponding URLs for each citation in this exact format: "
+            "[1]: https://example.com "
+            "[2]: https://another-example.com "
+            "Always include one URL per line. This ensures all citations are properly clickable. "
+            "Do not use footnote-style citations like [^1^]. "
             "If search results don't contain the answer, clearly state that and provide your best knowledge."
         )
         openai_messages.append({"role": "system", "content": system_message})

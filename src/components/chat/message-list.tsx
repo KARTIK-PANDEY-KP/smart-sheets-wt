@@ -1,48 +1,57 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { useChat } from "./chat-provider";
 import { cn } from "@/lib/utils";
 
-// Function to render message content with clickable Markdown links
+// Function to render message content with clickable numeric citations
 const renderMessageWithLinks = (content: string) => {
   if (!content) return null;
   
-  // Regular expression to match markdown links: [text](url)
-  const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+  // Regular expression to match numeric citations: [1], [2], etc.
+  const citationRegex = /\[(\d+)\]/g;
   
-  // If no links, return content as is
-  if (!linkRegex.test(content)) return content;
+  // If no citations, return content as is
+  if (!citationRegex.test(content)) return content;
   
   // Reset regex lastIndex
-  linkRegex.lastIndex = 0;
+  citationRegex.lastIndex = 0;
   
   const parts = [];
   let lastIndex = 0;
   let match;
   
-  // Find all markdown links and replace them with anchor tags
-  while ((match = linkRegex.exec(content)) !== null) {
-    // Add text before the link
+  // Find all citation numbers and replace them with anchor tags
+  while ((match = citationRegex.exec(content)) !== null) {
+    // Add text before the citation
     if (match.index > lastIndex) {
       parts.push(content.substring(lastIndex, match.index));
     }
     
-    // Add the link as an anchor tag
-    const [fullMatch, text, url] = match;
+    // Extract the citation number
+    const citationNumber = match[1];
+    
+    // Make it a clickable link - use the citation number as an anchor
     parts.push(
       <a 
-        key={`link-${match.index}`}
-        href={url}
+        key={`citation-${match.index}`}
+        href={`#citation-${citationNumber}`}
         className="text-blue-600 hover:underline"
-        target="_blank"
-        rel="noopener noreferrer"
+        onClick={(e) => {
+          e.preventDefault();
+          // Find the URL in the message that corresponds to this citation
+          const sourceRegex = new RegExp(`\\[${citationNumber}\\]:\\s*(https?://[^\\s]+)`, 'i');
+          const sourceMatch = content.match(sourceRegex);
+          if (sourceMatch && sourceMatch[1]) {
+            window.open(sourceMatch[1], '_blank');
+          }
+        }}
       >
-        {text}
+        {match[0]}
       </a>
     );
     
-    lastIndex = match.index + fullMatch.length;
+    lastIndex = match.index + match[0].length;
   }
   
   // Add any remaining text
@@ -51,6 +60,41 @@ const renderMessageWithLinks = (content: string) => {
   }
   
   return <>{parts}</>;
+};
+
+// Component for collapsible tool message
+const CollapsibleToolMessage = ({ message }: { message: { content: string; toolName?: string } }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  // Get preview (first line or first 60 characters)
+  const getPreview = () => {
+    const firstLine = message.content.split('\n')[0];
+    return firstLine.length > 60 ? firstLine.substring(0, 60) + '...' : firstLine;
+  };
+  
+  return (
+    <div className="w-full">
+      <div 
+        className="text-xs text-gray-500 mb-1 font-semibold flex items-center justify-between cursor-pointer"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <span>{message.toolName || "Tool"}</span>
+        <span className="text-blue-500 text-xs">
+          {isExpanded ? "Show less" : "Show more"}
+        </span>
+      </div>
+      <div className="whitespace-pre-wrap">
+        {isExpanded ? (
+          renderMessageWithLinks(message.content)
+        ) : (
+          <div onClick={() => setIsExpanded(true)} className="cursor-pointer hover:bg-gray-50 p-1 rounded">
+            {getPreview()}
+            {message.content.length > getPreview().length && "..."}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 };
 
 export function MessageList() {
@@ -78,22 +122,23 @@ export function MessageList() {
                   : "bg-white text-gray-900 border border-gray-200 shadow-sm"
             )}
           >
-            {message.role === "tool" && (
-              <div className="text-xs text-gray-500 mb-1 font-semibold">
-                {message.toolName || "Tool"}
-              </div>
-            )}
-            <div className="whitespace-pre-wrap">
-              {message.role === "assistant" 
-                ? renderMessageWithLinks(message.content)
-                : message.content}
-            </div>
-            {message.status === "running" && message.role === "assistant" && (
-              <div className="mt-2 flex items-center space-x-2">
-                <div className="h-2 w-2 animate-bounce rounded-full bg-gray-400" />
-                <div className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:0.2s]" />
-                <div className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:0.4s]" />
-              </div>
+            {message.role === "tool" ? (
+              <CollapsibleToolMessage message={message} />
+            ) : (
+              <>
+                <div className="whitespace-pre-wrap">
+                  {message.role === "assistant" 
+                    ? renderMessageWithLinks(message.content)
+                    : message.content}
+                </div>
+                {message.status === "running" && message.role === "assistant" && (
+                  <div className="mt-2 flex items-center space-x-2">
+                    <div className="h-2 w-2 animate-bounce rounded-full bg-gray-400" />
+                    <div className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:0.2s]" />
+                    <div className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:0.4s]" />
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
