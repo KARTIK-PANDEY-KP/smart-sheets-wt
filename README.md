@@ -98,6 +98,38 @@ CREATE TABLE chat_messages (
 );
 ```
 
+### Column-by-Column Explanation
+
+#### Chats Table
+
+| Column         | Why it exists / What it's for                                                                 |
+|----------------|----------------------------------------------------------------------------------------------|
+| `id`           | Unique identifier for each chat session (e.g., UUID). Needed to relate messages to a session.|
+| `created_at`   | Timestamp for when the chat was started. Useful for sorting and analytics.                   |
+| `title`        | Optional, for user-friendly naming or summarizing the chat.                                  |
+| `model`        | Records which AI model was used for this chat (e.g., "gpt-4").                              |
+| `chat_metadata`| Stores additional settings, system prompts, or preferences for the chat.                     |
+
+#### ChatMessages Table
+
+| Column         | Why it exists / What it's for                                                                 |
+|----------------|----------------------------------------------------------------------------------------------|
+| `id`           | Unique identifier for each message. Required for referencing and ordering.                    |
+| `chat_id`      | Foreign key linking the message to its parent chat.                                          |
+| `ts`           | Timestamp for when the message was created. Maintains message order and enables time-based queries.|
+| `role`         | Indicates who sent the message: `user`, `assistant`, or `tool`.                              |
+| `content`      | The actual message text or tool output.                                                      |
+| `tool_name`    | If the message is from a tool, records which tool was used.                                  |
+| `tool_args`    | Stores the arguments passed to the tool, for reproducibility and debugging.                  |
+| `partial_json` | Stores partial/streaming responses for real-time UIs.                                        |
+
+#### What does NOT belong in ChatMessages
+
+- **Summaries:** Summaries of the chat or message history should be generated on demand or stored in a separate table/column if needed for performance, but not mixed with the raw message history.
+- **Embeddings:** Vector embeddings for semantic search or retrieval should be stored in a separate table or index, not in the main message table.
+- **User data:** No user authentication or tracking data is stored here, as per requirements.
+- **Derived analytics:** Any analytics, statistics, or derived data should be kept separate to keep the message history clean and focused on reconstructing context.
+
 ### Database Design Rationale
 
 #### 1. `Chats` Table (ChatTable)
