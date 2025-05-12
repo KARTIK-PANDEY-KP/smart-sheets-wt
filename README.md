@@ -2,14 +2,9 @@
 
 A modern chat application with streaming responses, built using Next.js, FastAPI, and SQLite. This project demonstrates a complete chat interface with real-time message streaming, tool usage tracking, and persistent chat history.
 
-## Demo Video
+## Demo GIF
 
-<video width="100%" controls>
-  <source src="video/demo.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
-
-[Direct link to video](https://github.com/KARTIK-PANDEY-KP/smart-sheets-wt/blob/main/video/demo.mp4)
+![Demo](video/demo.gif)
 
 ## Project Structure
 
