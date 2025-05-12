@@ -98,6 +98,52 @@ CREATE TABLE chat_messages (
 );
 ```
 
+### Database Design Rationale
+
+#### 1. `Chats` Table (ChatTable)
+**Purpose:**  Stores metadata about each chat session. This allows you to track and manage multiple conversations, each potentially with different settings or models.
+
+**Columns:**
+- `id` (TEXT, PRIMARY KEY): Unique identifier for each chat session (e.g., UUID).
+- `created_at` (TIMESTAMP): When the chat was created.
+- `title` (TEXT): Optional, for user-friendly naming or summarizing the chat.
+- `model` (TEXT): The AI model used for this chat (e.g., "gpt-4").
+- `chat_metadata` (JSON): Any additional metadata (e.g., system prompts, settings, or user preferences).
+
+**Why?**
+This table is designed to be extensible and to store all information that is relevant to the chat as a whole, not to individual messages. For example, if you want to know which model was used for a conversation, or when it started, you look here.
+
+#### 2. `ChatMessages` Table (ChatMessagesTable)
+**Purpose:**  Stores every message exchanged in a chat, including both user and assistant messages, as well as tool responses.
+
+**Columns:**
+- `id` (INTEGER, PRIMARY KEY AUTOINCREMENT): Unique identifier for each message.
+- `chat_id` (TEXT, FOREIGN KEY): Links the message to its parent chat in the `Chats` table.
+- `ts` (TIMESTAMP): Timestamp for when the message was created.
+- `role` (TEXT): Who sent the message (`user`, `assistant`, or `tool`).
+- `content` (TEXT): The actual message text or tool output.
+- `tool_name` (TEXT, nullable): If the message is from a tool, the tool's name (e.g., `web_search_tool`).
+- `tool_args` (JSON, nullable): Arguments passed to the tool, if applicable.
+- `partial_json` (JSON, nullable): For streaming or partial responses, stores intermediate data.
+
+**Why?**
+- **Context:** This table is designed to capture the full context of a conversation, which is critical for reconstructing the chat history and for feeding the correct context to the AI model (just like ChatGPT does).
+- **Flexibility:** By including `role`, `tool_name`, and `tool_args`, you can support not just user/assistant messages but also tool calls and their outputs, which is essential for advanced assistant UIs.
+- **Streaming:** The `partial_json` field allows you to store partial or streaming responses, which is important for real-time UIs.
+
+#### What Belongs Where?
+- **Chat-level data** (model, title, system prompt, settings): Goes in the `Chats` table.
+- **Message-level data** (who said what, when, tool calls, tool results): Goes in the `ChatMessages` table.
+- **Summaries, embeddings, or other derived data**: Should NOT be stored in `ChatMessages` unless you need them for context reconstruction. These can be added as new columns or tables if needed later.
+
+#### Why This Matters
+- **Reconstructing Context:**  When the assistant needs to generate a response, it often requires the full message history (or a window of it). Storing each message with its role and content allows you to reconstruct the exact context, just like ChatGPT does.
+- **Tool Use:**  By tracking tool calls and their results as messages, you can display them in the UI and also use them as context for future model calls.
+- **Extensibility:**  This schema is flexible enough to support new features (e.g., citations, message edits, reactions) by adding new columns or related tables.
+
+#### Example: How ChatGPT Handles Context
+ChatGPT and similar assistants reconstruct the conversation by pulling all messages (user, assistant, tool) in order, then feeding them to the model as context. This is why it's critical to store every message, its role, and any tool interactions in the `ChatMessages` table.
+
 ## Setup Instructions
 
 ### Backend Setup
