@@ -161,7 +161,9 @@ async def generate_chat_response(messages: List[Message], db: Session, chat_id: 
         system_message = (
             "You are a helpful AI assistant with access to web search results. "
             "If search results are provided, you MUST use them to provide the most accurate and up-to-date information. "
-            "When answering based on search results, cite sources using [number] notation. "
+            "When citing sources, use proper Markdown links, like [text](URL). "
+            "If there are numbered citations in the search results like [1], [2], etc., maintain those exact references "
+            "and include the corresponding URLs in your response as clickable links. "
             "If search results don't contain the answer, clearly state that and provide your best knowledge."
         )
         openai_messages.append({"role": "system", "content": system_message})
@@ -179,11 +181,12 @@ async def generate_chat_response(messages: List[Message], db: Session, chat_id: 
             # Format search results with clear structure and instructions
             formatted_search_results = "\n\n### Web Search Results:\n"
             for i, result in enumerate(search_results):
-                formatted_search_results += f"\n[{i+1}] {result}\n"
+                formatted_search_results += f"\n{result}\n"
             
             formatted_search_results += "\n\n### Instructions:\n"
             formatted_search_results += "Please answer the original question using these search results. "
-            formatted_search_results += "Cite sources using [number] notation."
+            formatted_search_results += "Maintain any links from the search results in your answer using proper Markdown format: [text](URL). "
+            formatted_search_results += "If numbers like [1], [2] appear in the search results, include the same numbered references in your answer, and provide the URLs as clickable links."
             
             # Replace the last user message with a formatted version
             openai_messages[-1]["content"] = (
