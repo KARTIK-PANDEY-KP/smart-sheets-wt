@@ -4,7 +4,12 @@ A modern chat application with streaming responses, built using Next.js, FastAPI
 
 ## Demo Video
 
-https://github.com/KARTIK-PANDEY-KP/smart-sheets-wt/blob/main/video/demo.mp4
+<video width="100%" controls>
+  <source src="video/demo.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
+[Direct link to video](https://github.com/KARTIK-PANDEY-KP/smart-sheets-wt/blob/main/video/demo.mp4)
 
 ## Project Structure
 
