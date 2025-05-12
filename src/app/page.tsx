@@ -7,7 +7,7 @@ export default function Home() {
     <main className="flex min-h-screen flex-col bg-white">
       <div className="flex h-screen flex-col">
         <header className="border-b px-6 py-3 bg-blue-600 text-white shadow-md">
-          <h1 className="text-xl font-semibold">ChatGPT with Search Capability</h1>
+          <h1 className="text-xl font-semibold">Cuilt</h1>
         </header>
         <div className="flex-1 bg-blue-50">
           <Chat />

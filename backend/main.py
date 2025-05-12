@@ -179,7 +179,10 @@ async def generate_chat_response(messages: List[Message], db: Session, chat_id: 
         system_message = (
             "You are a helpful AI assistant with access to web search results. "
             "If search results are provided, you MUST use them to provide the most accurate and up-to-date information. "
-            "For citations, use numbered references in square brackets like [1], [2], etc. "
+            "When citing information, use BOTH approaches together: "
+            "1. Use numbered references in square brackets like [1], [2], etc. "
+            "2. ALSO make the first mention of each source a clickable link using markdown format. For example: '[Salesforce Press Release](https://example.com)'. "
+            "This ensures the information is both properly cited AND immediately accessible. "
             "At the end of your message, include the corresponding URLs for each citation in this exact format: "
             "[1]: https://example.com "
             "[2]: https://another-example.com "
@@ -206,8 +209,11 @@ async def generate_chat_response(messages: List[Message], db: Session, chat_id: 
             
             formatted_search_results += "\n\n### Instructions:\n"
             formatted_search_results += "Please answer the original question using these search results. "
-            formatted_search_results += "Maintain any links from the search results in your answer using proper Markdown format: [text](URL). "
-            formatted_search_results += "If numbers like [1], [2] appear in the search results, include the same numbered references in your answer, and provide the URLs as clickable links."
+            formatted_search_results += "Use BOTH citation methods together: "
+            formatted_search_results += "1. Include numbered references like [1], [2] after each fact from the sources. "
+            formatted_search_results += "2. ALSO make the first mention of each source a markdown link, like '[Salesforce Q4 Report](URL)'. "
+            formatted_search_results += "At the end of your response, list all citation URLs in the format [1]: URL on separate lines. "
+            formatted_search_results += "This makes the information both properly cited AND immediately accessible with clickable links."
             
             # Replace the last user message with a formatted version
             openai_messages[-1]["content"] = (

@@ -4,54 +4,79 @@ import React, { useState } from "react";
 import { useChat } from "./chat-provider";
 import { cn } from "@/lib/utils";
 
-// Function to render message content with clickable numeric citations
+// Function to render message content with clickable numeric citations and markdown links
 const renderMessageWithLinks = (content: string) => {
   if (!content) return null;
   
+  // First, process any regular markdown links: [text](url)
+  const markdownLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+  const hasMdLinks = markdownLinkRegex.test(content);
+  
   // Regular expression to match numeric citations: [1], [2], etc.
   const citationRegex = /\[(\d+)\]/g;
+  const hasCitations = citationRegex.test(content);
   
-  // If no citations, return content as is
-  if (!citationRegex.test(content)) return content;
+  // If no links of any kind, return content as is
+  if (!hasMdLinks && !hasCitations) return content;
   
-  // Reset regex lastIndex
-  citationRegex.lastIndex = 0;
+  // Combined regex to match both markdown links and citations
+  const combinedRegex = /(\[([^\]]+)\]\(([^)]+)\))|(\[(\d+)\])/g;
   
   const parts = [];
   let lastIndex = 0;
   let match;
+  combinedRegex.lastIndex = 0;
   
-  // Find all citation numbers and replace them with anchor tags
-  while ((match = citationRegex.exec(content)) !== null) {
-    // Add text before the citation
+  // Process both types of links
+  while ((match = combinedRegex.exec(content)) !== null) {
+    // Add text before the link/citation
     if (match.index > lastIndex) {
       parts.push(content.substring(lastIndex, match.index));
     }
     
-    // Extract the citation number
-    const citationNumber = match[1];
-    
-    // Make it a clickable link - use the citation number as an anchor
-    parts.push(
-      <a 
-        key={`citation-${match.index}`}
-        href={`#citation-${citationNumber}`}
-        className="text-blue-600 hover:underline"
-        onClick={(e) => {
-          e.preventDefault();
-          // Find the URL in the message that corresponds to this citation
-          const sourceRegex = new RegExp(`\\[${citationNumber}\\]:\\s*(https?://[^\\s]+)`, 'i');
-          const sourceMatch = content.match(sourceRegex);
-          if (sourceMatch && sourceMatch[1]) {
-            window.open(sourceMatch[1], '_blank');
-          }
-        }}
-      >
-        {match[0]}
-      </a>
-    );
-    
-    lastIndex = match.index + match[0].length;
+    if (match[1]) {
+      // This is a markdown link [text](url)
+      const text = match[2];
+      const url = match[3];
+      parts.push(
+        <a 
+          key={`link-${match.index}`}
+          href={url}
+          className="text-blue-600 hover:underline"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {text}
+        </a>
+      );
+      
+      lastIndex = match.index + match[0].length;
+    } else if (match[4]) {
+      // This is a citation [n]
+      const citationNumber = match[5];
+      
+      // Make it a clickable link - use the citation number as an anchor
+      parts.push(
+        <a 
+          key={`citation-${match.index}`}
+          href={`#citation-${citationNumber}`}
+          className="text-blue-600 hover:underline"
+          onClick={(e) => {
+            e.preventDefault();
+            // Find the URL in the message that corresponds to this citation
+            const sourceRegex = new RegExp(`\\[${citationNumber}\\]:\\s*(https?://[^\\s]+)`, 'i');
+            const sourceMatch = content.match(sourceRegex);
+            if (sourceMatch && sourceMatch[1]) {
+              window.open(sourceMatch[1], '_blank');
+            }
+          }}
+        >
+          {match[0]}
+        </a>
+      );
+      
+      lastIndex = match.index + match[0].length;
+    }
   }
   
   // Add any remaining text
